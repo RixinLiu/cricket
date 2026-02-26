@@ -9,6 +9,18 @@
 #include "cpu-utils.h"
 #include "log.h"
 
+/* NVML functions live in libnvidia-ml.so.1, NOT in libcudart.so.
+ * Override DEF_DLSYM to use the correct library handle for all DEF_FN
+ * expansions in this translation unit. */
+#undef DEF_DLSYM
+#define DEF_DLSYM(RET, NAME) \
+    RET ret; char* error_str; \
+    *(void **)(&fun) = dlsym(libwrap_get_nvml_handle(), #NAME); \
+    if ((error_str = dlerror()) != NULL) { \
+        LOGE(LOG_ERROR, "[nvml-libwrap] %s", error_str); \
+        return ret; \
+    } \
+
 #ifdef WITH_API_CNT
 static int api_call_cnt = 0;
 void cpu_nvml_print_api_call_cnt(void)

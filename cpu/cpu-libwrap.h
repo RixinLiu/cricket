@@ -7,6 +7,7 @@
 
 
 void* libwrap_get_sohandle();
+void* libwrap_get_nvml_handle();
 void libwrap_pre_call(char *ret, char *name, char *parameters);
 void libwrap_post_call(char *ret, char *name, char *parameters);
 

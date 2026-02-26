@@ -18,6 +18,21 @@ inline void* libwrap_get_sohandle()
     return so_handle;
 }
 
+static const char* LIBNVML_PATH = "libnvidia-ml.so.1";
+static void *nvml_so_handle;
+
+inline void* libwrap_get_nvml_handle()
+{
+    if (!nvml_so_handle) {
+        if ( !(nvml_so_handle = dlopen(LIBNVML_PATH, RTLD_LAZY | RTLD_GLOBAL)) ) {
+            LOGE(LOG_ERROR, "[nvml] %s", dlerror());
+            nvml_so_handle = NULL;
+            return 0;
+        }
+    }
+    return nvml_so_handle;
+}
+
 inline void libwrap_pre_call(char *ret, char *name, char *parameters)
 {
     LOG(LOG_DEBUG, "%s", name);

@@ -896,12 +896,28 @@ CUresult cuLaunchKernel(CUfunction f, unsigned int gridDimX,
     }
 
     if (!found_kernel) {
-        LOGE(LOG_ERROR, "request to call unknown kernel.");
-        return CUDA_ERROR_INVALID_CONTEXT;
-    }
-
-
-    if (kernelParams != NULL) {
+        /* Unknown kernel — this is normal for dynamically-loaded PyTorch
+         * kernels registered without ELF parsing.  We can still launch via
+         * the extra (CU_LAUNCH_PARAM_BUFFER_POINTER) path or kernelParams.
+         * Use param_num=0 so the server receives an empty param blob and
+         * reconstructs args from the extra buffer pointer directly. */
+        if (extra != NULL) {
+            /* CU_LAUNCH_PARAM_BUFFER_POINTER path: extra[0]=POINTER_TAG,
+             * extra[1]=buf, extra[2]=SIZE_TAG, extra[3]=size. */
+            LOGE(LOG_DEBUG, "unknown kernel %p, using extra buffer path", f);
+            /* Encode: param_num=0 sentinel + raw buffer for server */
+            size_t param_num_zero = 0;
+            size_t buf_size = (size_t)(uintptr_t)extra[3];
+            rpc_args.mem_data_len = sizeof(size_t) + sizeof(size_t) + buf_size;
+            rpc_args.mem_data_val = malloc(rpc_args.mem_data_len);
+            memcpy(rpc_args.mem_data_val, &param_num_zero, sizeof(size_t));
+            memcpy(rpc_args.mem_data_val + sizeof(size_t), &buf_size, sizeof(size_t));
+            memcpy(rpc_args.mem_data_val + 2*sizeof(size_t), extra[1], buf_size);
+        } else {
+            LOGE(LOG_ERROR, "unknown kernel %p and no extra buffer — cannot launch", f);
+            return CUDA_ERROR_INVALID_CONTEXT;
+        }
+    } else if (kernelParams != NULL) {
         rpc_args.mem_data_len = sizeof(size_t) +
                                 info->param_num * sizeof(uint16_t) +
                                 info->param_size;
@@ -917,10 +933,14 @@ CUresult cuLaunchKernel(CUfunction f, unsigned int gridDimX,
                    kernelParams[j], size);
         }
     } else if (extra != NULL) {
-        LOGE(LOG_ERROR, "this way of passing kernel parameters is not yet "
-                        "supported");
-        rpc_args.mem_data_val = extra[1];
-        rpc_args.mem_data_len = (uint64_t)extra[3];
+        LOGE(LOG_DEBUG, "known kernel %p using extra buffer path", f);
+        size_t param_num_zero = 0;
+        size_t buf_size = (size_t)(uintptr_t)extra[3];
+        rpc_args.mem_data_len = sizeof(size_t) + sizeof(size_t) + buf_size;
+        rpc_args.mem_data_val = malloc(rpc_args.mem_data_len);
+        memcpy(rpc_args.mem_data_val, &param_num_zero, sizeof(size_t));
+        memcpy(rpc_args.mem_data_val + sizeof(size_t), &buf_size, sizeof(size_t));
+        memcpy(rpc_args.mem_data_val + 2*sizeof(size_t), extra[1], buf_size);
     }
     retval =
         rpc_culaunchkernel_1((uint64_t)f, gridDimX, gridDimY, gridDimZ,

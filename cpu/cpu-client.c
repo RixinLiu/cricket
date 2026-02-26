@@ -4,6 +4,7 @@
 #include <link.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <signal.h> //sigaction
 
 // For TCP socket
@@ -373,24 +374,37 @@ void __cudaRegisterFunction(void **fatCubinHandle, const char *hostFun,
 
     kernel_info_t *info = utils_search_info(&kernel_infos, (char *)deviceName);
     if (info == NULL) {
-        LOGE(LOG_ERROR, "request to register unknown function: \"%s\"",
+        /* Function not in kernel_infos (normal for PyTorch dynamic fatbinaries).
+         * Add a minimal entry so cuLaunchKernel can find it by host_fun pointer. */
+        LOGE(LOG_DEBUG, "request to register dynamically-loaded function: \"%s\"",
              deviceName);
-        return;
+        kernel_info_t new_info = { 0 };
+        new_info.name = strdup(deviceName);
+        new_info.host_fun = (void *)hostFun;
+        new_info.param_num = 0;
+        new_info.param_size = 0;
+        new_info.param_offsets = NULL;
+        new_info.param_sizes = NULL;
+        if (list_append_copy(&kernel_infos, &new_info) != 0) {
+            LOGE(LOG_ERROR, "list_append_copy failed for \"%s\"", deviceName);
+        }
     } else {
         LOGE(LOG_DEBUG, "request to register known function: \"%s\"",
              deviceName);
-        retval_1 = rpc_register_function_1((ptr)fatCubinHandle, (ptr)hostFun,
-                                           deviceFun, (char*)deviceName, thread_limit,
-                                           &result, clnt);
-        if (retval_1 != RPC_SUCCESS) {
-            LOGE(LOG_ERROR, "call failed.");
-            exit(1);
-        }
-        if (result.err != 0) {
-            LOGE(LOG_ERROR, "error registering function: %d", result.err);
-            exit(1);
-        }
         info->host_fun = (void *)hostFun;
+    }
+
+    retval_1 = rpc_register_function_1((ptr)fatCubinHandle, (ptr)hostFun,
+                                       deviceFun, (char*)deviceName, thread_limit,
+                                       &result, clnt);
+    if (retval_1 != RPC_SUCCESS) {
+        LOGE(LOG_ERROR, "call failed.");
+        exit(1);
+    }
+    if (result.err != 0) {
+        LOGE(LOG_ERROR, "error registering function: %d", result.err);
+        /* Don't exit — some functions may legitimately fail (e.g. from
+         * modules that registered but weren't fully loaded). */
     }
 }
 
@@ -409,10 +423,40 @@ void **__cudaRegisterFatBinary(void *fatCubin)
                                 &kernel_infos,
                                 (uint8_t **)&rpc_fat.mem_data_val,
                                 &fatbin_size) != 0) {
-        LOGE(LOG_ERROR, "error getting fatbin info");
-        return NULL;
+        /* ELF parsing failed — common for PyTorch/modern fatbinaries that use
+         * format 0x2 with PTX sections.  Send the complete raw fatbinary to the
+         * server so cuModuleLoadFatBinary() can JIT-compile PTX for the GPU. */
+        LOGE(LOG_WARNING, "elf2_get_fatbin_info failed; falling back to raw fatbin passthrough");
+        struct fat_header *fh = (struct fat_header *)fatCubin;
+        if (fh->magic != 0x466243b1) {
+            LOGE(LOG_ERROR, "unexpected fatCubin magic: %#x", fh->magic);
+            return NULL;
+        }
+        /* fh->text points to start of the fatbin data;
+         * fh->data points to one-past-end (outside the file).
+         * The complete fatbin size — including all architecture sections and
+         * PTX — is the byte span from text to data. */
+        const uint8_t *fat_start = (const uint8_t *)fh->text;
+        const uint8_t *fat_end   = (const uint8_t *)fh->data;
+        if (fat_start == NULL || fat_end == NULL || fat_end <= fat_start) {
+            /* Fallback: read size from fat_elf_header if data pointer unavailable */
+            if (fat_start == NULL) {
+                LOGE(LOG_ERROR, "fatCubin->text is NULL");
+                return NULL;
+            }
+            /* fat_elf_header: uint32 magic, uint16 version, uint16 header_size, uint64 size */
+            uint16_t hdr_size  = *(const uint16_t *)(fat_start + 6);
+            uint64_t data_size = *(const uint64_t *)(fat_start + 8);
+            rpc_fat.mem_data_val = (char *)fat_start;
+            rpc_fat.mem_data_len = (size_t)hdr_size + (size_t)data_size;
+        } else {
+            rpc_fat.mem_data_val = (char *)fat_start;
+            rpc_fat.mem_data_len = (size_t)(fat_end - fat_start);
+        }
+        LOGE(LOG_DEBUG, "raw fatbin passthrough: data=%p size=%zu", rpc_fat.mem_data_val, rpc_fat.mem_data_len);
+    } else {
+        rpc_fat.mem_data_len = fatbin_size;
     }
-    rpc_fat.mem_data_len = fatbin_size;
 
     // CUDA registers an atexit handler for fatbin cleanup that accesses
     // the fatbin data structure. Let's allocate some zeroes to avoid segfaults.

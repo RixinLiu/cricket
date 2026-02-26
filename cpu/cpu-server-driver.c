@@ -50,8 +50,43 @@ bool_t rpc_elf_load_1_svc(mem_data elf, ptr module_key, int *result,
     CUresult res;
     CUmodule module = NULL;
     GSCHED_RETAIN;
-    if ((res = cuModuleLoadData(&module, elf.mem_data_val)) != CUDA_SUCCESS) {
-        LOGE(LOG_ERROR, "cuModuleLoadData failed: %d", res);
+    /* Log the first 16 bytes of received data for debugging (LOG_WARNING to ensure visibility) */
+    {
+        const unsigned char *d = (const unsigned char *)elf.mem_data_val;
+        LOGE(LOG_WARNING, "rpc_elf_load: len=%zu bytes[0..15]=%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+             (size_t)elf.mem_data_len,
+             d[0],d[1],d[2],d[3],d[4],d[5],d[6],d[7],
+             d[8],d[9],d[10],d[11],d[12],d[13],d[14],d[15]);
+    }
+    /* Try cuModuleLoadFatBinary first (handles PyTorch/modern fatbinaries with
+     * PTX sections that can be JIT-compiled for the current GPU arch).
+     * Fall back to cuModuleLoadData for plain ELF cubins (legacy Cricket path). */
+    res = cuModuleLoadFatBinary(&module, elf.mem_data_val);
+    if (res != CUDA_SUCCESS) {
+        LOGE(LOG_DEBUG, "cuModuleLoadFatBinary failed (%d), trying cuModuleLoadData", res);
+        res = cuModuleLoadData(&module, elf.mem_data_val);
+    }
+    if (res == CUDA_ERROR_NO_BINARY_FOR_GPU) {
+        /* This fatbin has no code for our GPU arch (e.g. an arch-specific binary
+         * that doesn't include sm_89). This is not a hard error — the client may
+         * never actually call kernels from this module on this GPU. Store a NULL
+         * sentinel so subsequent rpc_register_function calls can skip gracefully. */
+        LOGE(LOG_WARNING, "rpc_elf_load: no GPU binary for this arch (len=%zu), storing NULL sentinel", (size_t)elf.mem_data_len);
+        module = NULL;
+        res = CUDA_SUCCESS;
+        /* Store NULL sentinel — no need to copy elf data. */
+        if (resource_mg_add_sorted(&rm_modules, (void *)module_key, NULL) != 0) {
+            LOGE(LOG_ERROR, "resource_mg_create failed for NULL sentinel");
+            *result = 1;
+            GSCHED_RELEASE;
+            return 1;
+        }
+        GSCHED_RELEASE;
+        *result = 0;
+        RECORD_RESULT(integer, *result);
+        return 1;
+    } else if (res != CUDA_SUCCESS) {
+        LOGE(LOG_ERROR, "cuModuleLoad{FatBinary,Data} both failed: %d (len=%zu)", res, (size_t)elf.mem_data_len);
         *result = res;
         return 1;
     }
@@ -157,6 +192,19 @@ bool_t rpc_register_function_1_svc(ptr fatCubinHandle, ptr hostFun,
         result->err = -1;
         return 1;
     }
+    /* NULL module means fatbin had no GPU binary for this arch — store NULL
+     * function handle so kernel launches from this module fail gracefully. */
+    if (module == NULL) {
+        LOGE(LOG_WARNING, "rpc_register_function: module is NULL sentinel (no GPU binary), storing NULL function for %s", deviceName);
+        result->ptr_result_u.ptr = 0;
+        result->err = 0;
+        if (resource_mg_add_sorted(&rm_functions, (void *)hostFun, NULL) != 0) {
+            LOGE(LOG_ERROR, "error in resource manager");
+        }
+        GSCHED_RELEASE;
+        RECORD_RESULT(ptr_result_u, *result);
+        return 1;
+    }
     result->err = cuModuleGetFunction((CUfunction *)&result->ptr_result_u.ptr,
                                       module, deviceName);
     if (resource_mg_add_sorted(&rm_functions, (void *)hostFun,
@@ -208,6 +256,13 @@ bool_t rpc_register_var_1_svc(ptr fatCubinHandle, ptr hostVar,
              "from an unknown module.",
              fatCubinHandle);
         *result = -1;
+        return 1;
+    }
+    /* NULL module means fatbin had no GPU binary for this arch — skip gracefully. */
+    if (module == NULL) {
+        LOGE(LOG_WARNING, "rpc_register_var: NULL sentinel module for %s, skipping", deviceName);
+        *result = 0;
+        GSCHED_RELEASE;
         return 1;
     }
     if ((res = cuModuleGetGlobal(&dptr, &d_size, module, deviceName)) !=
@@ -597,6 +652,39 @@ bool_t rpc_culaunchkernel_1_svc(uint64_t f, unsigned int gridDimX,
         return 1;
     }
     param_num = *((size_t *)args.mem_data_val);
+
+    if (param_num == 0) {
+        /* Raw-buffer path (CU_LAUNCH_PARAM_BUFFER_POINTER): param_num==0
+         * signals that the next size_t is the buffer length, followed by
+         * the raw parameter buffer.  Pass it directly via cuLaunchKernel
+         * extra[] so the driver handles argument layout. */
+        if (args.mem_data_len < 2 * sizeof(size_t)) {
+            LOGE(LOG_ERROR, "param.mem_data_len too small for raw-buffer path");
+            *result = CUDA_ERROR_INVALID_VALUE;
+            return 1;
+        }
+        size_t buf_size = *((size_t *)(args.mem_data_val + sizeof(size_t)));
+        void *buf = args.mem_data_val + 2 * sizeof(size_t);
+        void *extra_args[] = {
+            (void *)CU_LAUNCH_PARAM_BUFFER_POINTER, buf,
+            (void *)CU_LAUNCH_PARAM_BUFFER_SIZE,    &buf_size,
+            (void *)CU_LAUNCH_PARAM_END
+        };
+        LOGE(LOG_DEBUG,
+             "cuLaunchKernel(raw-buf) func=%p->%p grid=[%d,%d,%d] block=[%d,%d,%d] "
+             "buf_size=%zu stream=%p",
+             f, resource_mg_get(&rm_functions, (void *)f),
+             gridDimX, gridDimY, gridDimZ, blockDimX, blockDimY, blockDimZ,
+             buf_size, (void *)hStream);
+        GSCHED_RETAIN;
+        *result =
+            cuLaunchKernel((CUfunction)resource_mg_get(&rm_functions, (void *)f),
+                           gridDimX, gridDimY, gridDimZ, blockDimX, blockDimY,
+                           blockDimZ, sharedMemBytes, (CUstream)hStream,
+                           NULL, extra_args);
+        GSCHED_RELEASE;
+        return 1;
+    }
 
     if (args.mem_data_len < sizeof(size_t) + sizeof(uint16_t) * param_num) {
         LOGE(LOG_ERROR, "param.mem_data_len is too small");
