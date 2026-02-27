@@ -689,6 +689,20 @@ bool_t cuda_graph_instantiate_1_svc(ptr graph, size_t flags, ptr_result *result,
     return 1;
 }
 
+bool_t cuda_graph_launch_1_svc(ptr graphExec, ptr stream, int *result,
+                                struct svc_req *rqstp)
+{
+    RECORD_API(cuda_graph_launch_1_argument);
+    RECORD_ARG(1, graphExec);
+    RECORD_ARG(2, stream);
+    LOGE(LOG_DEBUG, "cudaGraphLaunch");
+    *result = cudaGraphLaunch(
+        resource_mg_get(&rm_graphs, (void *)graphExec),
+        resource_mg_get(&rm_streams, (void *)stream));
+    RECORD_RESULT(integer, *result);
+    return 1;
+}
+
 bool_t cuda_graph_get_nodes_1_svc(ptr graph, bool_t nodes_is_null,
                                   size_t num_nodes, mem_result *result,
                                   struct svc_req *rqstp)

@@ -293,6 +293,7 @@ program RPC_CD_PROG {
         int          CUDA_STREAM_BEGIN_CAPTURE(ptr, int)                        = 270;
         ptr_result   CUDA_GRAPH_INSTANTIATE(ptr, size_t)                        = 271;
         mem_result   CUDA_GRAPH_GET_NODES(ptr, bool, size_t)                    = 272;
+        int          CUDA_GRAPH_LAUNCH(ptr, ptr)                                = 273;
 
         /* ### Event Management ### */
         ptr_result   CUDA_EVENT_CREATE(void)                                    = 280;

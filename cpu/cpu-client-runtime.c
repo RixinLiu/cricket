@@ -2289,8 +2289,19 @@ DEF_FN(cudaError_t, cudaGraphKernelNodeGetParams, cudaGraphNode_t, node,
        struct cudaKernelNodeParams *, pNodeParams)
 DEF_FN(cudaError_t, cudaGraphKernelNodeSetParams, cudaGraphNode_t, node,
        const struct cudaKernelNodeParams *, pNodeParams)
-DEF_FN(cudaError_t, cudaGraphLaunch, cudaGraphExec_t, graphExec, cudaStream_t,
-       stream)
+cudaError_t cudaGraphLaunch(cudaGraphExec_t graphExec, cudaStream_t stream)
+{
+#ifdef WITH_API_CNT
+    api_call_cnt++;
+#endif // WITH_API_CNT
+    int result;
+    enum clnt_stat retval;
+    retval = cuda_graph_launch_1((ptr)graphExec, (ptr)stream, &result, clnt);
+    if (retval != RPC_SUCCESS) {
+        clnt_perror(clnt, "call failed");
+    }
+    return result;
+}
 DEF_FN(cudaError_t, cudaGraphMemcpyNodeGetParams, cudaGraphNode_t, node,
        struct cudaMemcpy3DParms *, pNodeParams)
 DEF_FN(cudaError_t, cudaGraphMemcpyNodeSetParams, cudaGraphNode_t, node,
