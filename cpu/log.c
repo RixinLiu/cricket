@@ -12,15 +12,72 @@
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#define _GNU_SOURCE
+
 #include "log.h"
 
+#include <dlfcn.h>
+#include <libgen.h>
+#include <limits.h>
 #include <stdio.h>
-#include <time.h>
-#include <sys/time.h>
 #include <stdarg.h>
 #include <string.h>
+#include <sys/time.h>
+#include <time.h>
 
 static struct timeval start_time = {0};
+static FILE* warning_log_file = NULL;
+
+static const char* to_string_plain(log_level level)
+{
+	static const char* const buffer[] = {"ERROR", "WARNING", "INFO", "DEBUG"};
+	if(level > LOG_DEBUG){
+		return buffer[LOG_DEBUG];
+	}
+	return buffer[(int)level];
+}
+
+static void init_warning_log_file(void)
+{
+	if (warning_log_file != NULL) {
+		return;
+	}
+
+	Dl_info info;
+	if (dladdr((void*)init_log, &info) == 0 || info.dli_fname == NULL) {
+		return;
+	}
+
+	char binary_path[PATH_MAX];
+	char component_dir[PATH_MAX];
+	char project_dir[PATH_MAX];
+	char warning_path[PATH_MAX];
+	const char* warning_filename = "/cricket_warning.log";
+	size_t project_dir_len;
+	size_t warning_filename_len;
+
+	snprintf(binary_path, sizeof(binary_path), "%s", info.dli_fname);
+	snprintf(component_dir, sizeof(component_dir), "%s", dirname(binary_path));
+	snprintf(project_dir, sizeof(project_dir), "%s", dirname(component_dir));
+	project_dir_len = strnlen(project_dir, sizeof(project_dir));
+	warning_filename_len = strlen(warning_filename);
+	if (project_dir_len + warning_filename_len + 1 > sizeof(warning_path)) {
+		return;
+	}
+
+	memcpy(warning_path, project_dir, project_dir_len);
+	memcpy(warning_path + project_dir_len, warning_filename, warning_filename_len + 1);
+
+	warning_log_file = fopen(warning_path, "a");
+}
+
+static FILE* get_log_stream(log_level level)
+{
+	if (level == LOG_WARNING) {
+		return warning_log_file != NULL ? warning_log_file : stderr;
+	}
+	return stdout;
+}
 
 struct log_data* get_log_data() {
 	static struct log_data log_data;
@@ -49,6 +106,7 @@ void init_log(char log_level, const char* proj_root)
 	get_log_data()->curr_level=log_level;
 	get_log_data()->project_offset = str_find_last_of(proj_root, '/');
 	gettimeofday(&start_time, 0);
+	init_warning_log_file();
 }
 
 void now_time(char* buf)
@@ -87,37 +145,49 @@ void loggf(log_level level, const char* formatstr, ... )
 {
 	va_list vararg;
 	va_start(vararg, formatstr);
-	
+
+	FILE* stream = get_log_stream(level);
 	char time[64];
 #ifdef DELTA_TIME
 	delta_time(time);
 #else
 	now_time(time);
 #endif //DELTA_TIME
-	printf("%s %s:\t", time, to_string(level));
-	vprintf(formatstr, vararg);
-	printf("\n");
+	fprintf(stream, "%s %s:\t", time,
+		level == LOG_WARNING ? to_string_plain(level) : to_string(level));
+	vfprintf(stream, formatstr, vararg);
+	fprintf(stream, "\n");
+	fflush(stream);
+	va_end(vararg);
 }
 
 void loggfe(log_level level, int line, const char* file, const char* formatstr, ... )
 {
 	va_list vararg;
 	va_start(vararg, formatstr);
-	
+
+	FILE* stream = get_log_stream(level);
 	char time[64];
 #ifdef DELTA_TIME
 	delta_time(time);
 #else
 	now_time(time);
 #endif //DELTA_TIME
-	printf("%s %7s: ", time, to_string(level));
-	vprintf(formatstr, vararg);
+	fprintf(stream, "%s %7s: ", time,
+		level == LOG_WARNING ? to_string_plain(level) : to_string(level));
+	vfprintf(stream, formatstr, vararg);
 	char stripped[64];
 	strcpy(stripped, file);
 	str_strip(stripped, get_log_data()->project_offset);
 #ifdef NOCOLORS
-	printf("\tin %s:%d\n", stripped, line);
+	fprintf(stream, "\tin %s:%d\n", stripped, line);
 #else
-	printf("\tin \033[4m%s:%d\033[0m\n", stripped, line);
+	if (level == LOG_WARNING) {
+		fprintf(stream, "\tin %s:%d\n", stripped, line);
+	} else {
+		fprintf(stream, "\tin \033[4m%s:%d\033[0m\n", stripped, line);
+	}
 #endif //NOCOLORS
+	fflush(stream);
+	va_end(vararg);
 }
