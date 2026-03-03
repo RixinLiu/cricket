@@ -295,7 +295,7 @@ void *dlopen(const char *filename, int flag)
     }
     /* filename is NULL or not in replace_libs list */
     if ((ret = dlopen_orig(filename, flag)) == NULL) {
-        LOGE(LOG_ERROR, "dlopen %s failed: ", filename, dlerror());
+        LOGE(LOG_ERROR, "dlopen %s failed: %s", filename, dlerror());
     } else if (has_kernel) {
         dlinfo(ret, RTLD_DI_LINKMAP, &map);
         LOGE(LOG_DEBUG, "dlopen to  %p", map->l_addr);
