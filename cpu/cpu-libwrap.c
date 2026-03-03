@@ -1,7 +1,22 @@
+#define _GNU_SOURCE
 #include <stdlib.h>
+#include <dlfcn.h>
 
 #include "cpu-libwrap.h"
 #include "log.h"
+
+/* Use the real dlopen (bypassing our interceptor) to avoid infinite recursion:
+ * our dlopen interceptor replaces libcuda/libnvml paths with cricket-client.so,
+ * which would trigger symbol resolution that calls back into libwrap_get_sohandle(). */
+static void *(*real_dlopen)(const char *, int) = NULL;
+
+static void *libwrap_dlopen(const char *path, int flags)
+{
+    if (real_dlopen == NULL) {
+        real_dlopen = dlsym(RTLD_NEXT, "dlopen");
+    }
+    return real_dlopen(path, flags);
+}
 
 static const char* LIBCUDA_PATH = "/usr/local/cuda/lib64/libcudart.so";
 static void *so_handle;
@@ -9,7 +24,7 @@ static void *so_handle;
 inline void* libwrap_get_sohandle()
 {
     if (!so_handle) {
-        if ( !(so_handle = dlopen(LIBCUDA_PATH, RTLD_LAZY)) ) {
+        if ( !(so_handle = libwrap_dlopen(LIBCUDA_PATH, RTLD_LAZY)) ) {
             LOGE(LOG_ERROR, "%s", dlerror());
             so_handle = NULL;
             return 0;
@@ -24,7 +39,7 @@ static void *nvml_so_handle;
 inline void* libwrap_get_nvml_handle()
 {
     if (!nvml_so_handle) {
-        if ( !(nvml_so_handle = dlopen(LIBNVML_PATH, RTLD_LAZY | RTLD_GLOBAL)) ) {
+        if ( !(nvml_so_handle = libwrap_dlopen(LIBNVML_PATH, RTLD_LAZY | RTLD_GLOBAL)) ) {
             LOGE(LOG_ERROR, "[nvml] %s", dlerror());
             nvml_so_handle = NULL;
             return 0;
