@@ -70,3 +70,25 @@ bool_t rpc_nvmlshutdown_1_svc(int *result, struct svc_req *rqstp)
     GSCHED_RELEASE;
     return 1;
 }
+
+bool_t rpc_nvmldevicegethandlebyindex_v2_1_svc(unsigned int index, ptr_result *result, struct svc_req *rqstp)
+{
+    LOGE(LOG_DEBUG, "%s(index=%u)", __FUNCTION__, index);
+    GSCHED_RETAIN;
+    nvmlDevice_t device;
+    result->err = nvmlDeviceGetHandleByIndex_v2(index, &device);
+    result->ptr_result_u.ptr = (ptr)device;
+    GSCHED_RELEASE;
+    return 1;
+}
+
+bool_t rpc_nvmldevicegetcudacomputecapability_1_svc(ptr device, dint_result *result, struct svc_req *rqstp)
+{
+    LOGE(LOG_DEBUG, "%s", __FUNCTION__);
+    GSCHED_RETAIN;
+    result->err = nvmlDeviceGetCudaComputeCapability((nvmlDevice_t)device,
+                                                     &result->dint_result_u.data.i1,
+                                                     &result->dint_result_u.data.i2);
+    GSCHED_RELEASE;
+    return 1;
+}

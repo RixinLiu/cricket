@@ -495,6 +495,8 @@ program RPC_CD_PROG {
         int          rpc_nvmlInitWithFlags(int)                                = 4001;
         int          rpc_nvmlInit_v2(void)                                     = 4002;
         int          rpc_nvmlShutdown(void)                                    = 4003;
+        ptr_result   rpc_nvmlDeviceGetHandleByIndex_v2(unsigned int index)     = 4004;
+        dint_result  rpc_nvmlDeviceGetCudaComputeCapability(ptr device)        = 4005;
         
         /* CUDNN */
         size_t      rpc_cudnnGetVersion(void) = 5000;

@@ -116,7 +116,24 @@ nvmlReturn_t nvmlDeviceGetCount_v2(unsigned int* deviceCount )
     }
     return result.err;
 }
-DEF_FN(nvmlReturn_t, nvmlDeviceGetCudaComputeCapability, nvmlDevice_t, device, int*, major, int*, minor )
+nvmlReturn_t nvmlDeviceGetCudaComputeCapability(nvmlDevice_t device, int *major, int *minor)
+{
+#ifdef WITH_API_CNT
+    api_call_cnt++;
+#endif //WITH_API_CNT
+    dint_result result;
+    enum clnt_stat retval;
+    retval = rpc_nvmldevicegetcudacomputecapability_1((ptr)device, &result, clnt);
+    if (retval != RPC_SUCCESS) {
+        LOGE(LOG_ERROR, "call failed: %s", __FUNCTION__);
+        return NVML_ERROR_UNKNOWN;
+    }
+    if (result.err == NVML_SUCCESS) {
+        if (major != NULL) *major = result.dint_result_u.data.i1;
+        if (minor != NULL) *minor = result.dint_result_u.data.i2;
+    }
+    return result.err;
+}
 DEF_FN(nvmlReturn_t, nvmlDeviceGetCurrPcieLinkGeneration, nvmlDevice_t, device, unsigned int*, currLinkGen )
 DEF_FN(nvmlReturn_t, nvmlDeviceGetCurrPcieLinkWidth, nvmlDevice_t, device, unsigned int*, currLinkWidth )
 DEF_FN(nvmlReturn_t, nvmlDeviceGetCurrentClocksThrottleReasons, nvmlDevice_t, device, unsigned long long*, clocksThrottleReasons )
@@ -143,7 +160,22 @@ DEF_FN(nvmlReturn_t, nvmlDeviceGetFanSpeed_v2, nvmlDevice_t, device, unsigned in
 DEF_FN(nvmlReturn_t, nvmlDeviceGetGpuMaxPcieLinkGeneration, nvmlDevice_t, device, unsigned int*, maxLinkGenDevice )
 DEF_FN(nvmlReturn_t, nvmlDeviceGetGpuOperationMode, nvmlDevice_t, device, nvmlGpuOperationMode_t*, current, nvmlGpuOperationMode_t*, pending )
 DEF_FN(nvmlReturn_t, nvmlDeviceGetGraphicsRunningProcesses_v3, nvmlDevice_t, device, unsigned int*, infoCount, nvmlProcessInfo_t*, infos )
-DEF_FN(nvmlReturn_t, nvmlDeviceGetHandleByIndex_v2, unsigned int,  index, nvmlDevice_t*, device )
+nvmlReturn_t nvmlDeviceGetHandleByIndex_v2(unsigned int index, nvmlDevice_t *device)
+{
+#ifdef WITH_API_CNT
+    api_call_cnt++;
+#endif //WITH_API_CNT
+    ptr_result result;
+    enum clnt_stat retval;
+    retval = rpc_nvmldevicegethandlebyindex_v2_1(index, &result, clnt);
+    if (retval != RPC_SUCCESS) {
+        LOGE(LOG_ERROR, "call failed: %s", __FUNCTION__);
+        return NVML_ERROR_UNKNOWN;
+    }
+    if (result.err == NVML_SUCCESS && device != NULL)
+        *device = (nvmlDevice_t)result.ptr_result_u.ptr;
+    return result.err;
+}
 DEF_FN(nvmlReturn_t, nvmlDeviceGetHandleByPciBusId_v2, const char*, pciBusId, nvmlDevice_t*, device )
 DEF_FN(nvmlReturn_t, nvmlDeviceGetHandleBySerial, const char*, serial, nvmlDevice_t*, device )
 DEF_FN(nvmlReturn_t, nvmlDeviceGetHandleByUUID, const char*, uuid, nvmlDevice_t*, device )
