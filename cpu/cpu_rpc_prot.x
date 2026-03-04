@@ -450,6 +450,8 @@ program RPC_CD_PROG {
         sz_result    rpc_cumemgetallocationgranularity(mem_data, int)          = 1030;
         int_result   rpc_cuOccupancyMaxActiveBlocksPerMultiprocessor(ptr, int, size_t) = 1031;
         int_result   rpc_cuOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(ptr, int, size_t, int) = 1032;
+        int_result   rpc_cuFuncGetAttribute(int, ptr)                          = 1033;
+        int_result   rpc_cuPointerGetAttribute(int, ptr)                       = 1034;
 
         /* HIDDEN DRIVER API */
 /*        ptr_result   rpc_hidden_get_device_ctx(int)                            = 1101;

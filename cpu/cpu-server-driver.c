@@ -849,6 +849,32 @@ bool_t rpc_cuoccupancymaxactiveblockspermultiprocessorwithflags_1_svc(
     return 1;
 }
 
+bool_t rpc_cufuncgetattribute_1_svc(int attrib, ptr func, int_result *result,
+                                    struct svc_req *rqstp)
+{
+    LOG(LOG_DEBUG, "%s", __FUNCTION__);
+    GSCHED_RETAIN;
+    result->err = cuFuncGetAttribute(
+        &result->int_result_u.data,
+        (CUfunction_attribute)attrib,
+        (CUfunction)resource_mg_get(&rm_functions, (void *)func));
+    GSCHED_RELEASE;
+    return 1;
+}
+
+bool_t rpc_cupointergetattribute_1_svc(int attrib, ptr devptr, int_result *result,
+                                       struct svc_req *rqstp)
+{
+    LOG(LOG_DEBUG, "%s", __FUNCTION__);
+    GSCHED_RETAIN;
+    result->err = cuPointerGetAttribute(
+        &result->int_result_u.data,
+        (CUpointer_attribute)attrib,
+        (CUdeviceptr)devptr);
+    GSCHED_RELEASE;
+    return 1;
+}
+
 /* ################## START OF HIDDEN FUNCTIONS IMPL ######################## */
 
 /*
