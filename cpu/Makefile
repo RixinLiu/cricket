@@ -112,7 +112,7 @@ endif
 
 SERVER_LD_FLAGS = $(LD_FLAGS) -lcudart -lcusolver -lcuda -lcublas -lrt -lpthread -lnvidia-ml -lcudnn -lcublasLt
 SERVER_BIN_LD_FLAGS = $(SERVER_LD_FLAGS) -Wl,--unresolved-symbols=ignore-in-object-files
-CLIENT_LD_FLAGS = $(LD_FLAGS)
+CLIENT_LD_FLAGS = $(LD_FLAGS) -Wl,--version-script=cricket-client-cublas.map
 
 # Targets
 .PHONY: all clean

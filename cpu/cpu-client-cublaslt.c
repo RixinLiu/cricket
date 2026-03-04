@@ -210,6 +210,38 @@ cublasStatus_t cublasLtMatrixLayoutDestroy(cublasLtMatrixLayout_t matLayout)
     return result;
 }
 
+cublasStatus_t cublasLtMatrixLayoutSetAttribute(
+      cublasLtMatrixLayout_t matLayout,
+      cublasLtMatrixLayoutAttribute_t attr,
+      const void *buf,
+      size_t sizeInBytes)
+{
+#ifdef WITH_API_CNT
+    api_call_cnt++;
+#endif //WITH_API_CNT
+
+    mem_data data = {
+        .mem_data_len = sizeInBytes,
+        .mem_data_val = (char *)buf
+    };
+
+    int result;
+    enum clnt_stat retval_1;
+    retval_1 = rpc_cublasltmatrixlayoutsetattribute_1(
+        (ptr)matLayout,
+        attr,
+        data,
+        &result,
+        clnt
+    );
+
+    if (retval_1 != RPC_SUCCESS) {
+        LOGE(LOG_ERROR, "%s failed (%d)", __FUNCTION__, retval_1);
+    }
+
+    return result;
+}
+
 cublasStatus_t cublasLtMatmulDescSetAttribute(
       cublasLtMatmulDesc_t matmulDesc,
       cublasLtMatmulDescAttributes_t attr,

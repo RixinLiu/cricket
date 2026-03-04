@@ -279,11 +279,29 @@ void *dlopen(const char *filename, int flag)
         "/usr/lib/x86_64-linux-gnu/libcuda.so.550.127.05",
         "/usr/local/cuda/lib64/libcudart.so"
     };
+    /* Substring patterns: any dlopen of a library whose name contains one of
+     * these strings is redirected to cricket-client.so so that cuBLAS and
+     * cuBLAS-Lt symbols are served via RPC rather than the real GPU library. */
+    static const char *replace_patterns[] = {
+        "libcublas.so",
+        "libcublasLt.so",
+    };
     LOGE(LOG_DEBUG, "intercepted dlopen(filename: %s)", filename);
     static const size_t replace_libs_sz = sizeof(replace_libs) / sizeof(char *);
+    static const size_t replace_patterns_sz = sizeof(replace_patterns) / sizeof(char *);
     if (filename != NULL) {
         for (size_t i=0; i != replace_libs_sz; ++i) {
             if (strcmp(filename, replace_libs[i]) == 0) {
+                LOG(LOG_DEBUG, "replacing dlopen call to %s with cricket-client.so", filename);
+                dl_handle = dlopen_orig("cricket-client.so", flag);
+                if (clnt == NULL) {
+                    LOGE(LOG_WARNING, "rpc seems to be uninitialized while loading %s", filename);
+                }
+                return dl_handle;
+            }
+        }
+        for (size_t i=0; i != replace_patterns_sz; ++i) {
+            if (strstr(filename, replace_patterns[i]) != NULL) {
                 LOG(LOG_DEBUG, "replacing dlopen call to %s with cricket-client.so", filename);
                 dl_handle = dlopen_orig("cricket-client.so", flag);
                 if (clnt == NULL) {

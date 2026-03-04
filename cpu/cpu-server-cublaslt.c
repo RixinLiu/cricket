@@ -209,3 +209,19 @@ bool_t rpc_cublasltmatmul_1_svc(ptr lightHandle,
     GSCHED_RELEASE;
     return 1;
 }
+
+bool_t rpc_cublasltmatrixlayoutsetattribute_1_svc(ptr matLayout, int attr, mem_data data, int *result, struct svc_req *rqstp)
+{
+    LOGE(LOG_DEBUG, "cublasLtMatrixLayoutSetAttribute");
+    GSCHED_RETAIN;
+
+    *result = cublasLtMatrixLayoutSetAttribute(
+        (cublasLtMatrixLayout_t)resource_mg_get(&rm_cublaslt, (void*)matLayout),
+        (cublasLtMatrixLayoutAttribute_t)attr,
+        data.mem_data_val,
+        data.mem_data_len
+    );
+
+    GSCHED_RELEASE;
+    return 1;
+}

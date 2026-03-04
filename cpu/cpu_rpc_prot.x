@@ -617,5 +617,6 @@ program RPC_CD_PROG {
         int rpc_cublasgemmstridedbatchedex(ptr handle, int transa, int transb, int m,int n,int k,float alpha,ptr A, int Atype, int lda, ll strideA,ptr B,int Btype,int ldb, ll strideB,float beta,   ptr C,int Ctype,int ldc, ll strideC,int batchCount,int computeType,int algo) = 5329;
         int rpc_cublasgemmex(ptr, int, int, int, int, int, float,ptr, int, int, ptr, int, int, float, ptr, int, int, int, int) = 5330;
         int rpc_cublasgemmstridedbatched(ptr handle, int transa, int transb, int m,int n,int k,float alpha,ptr A, int lda, ll strideA,ptr B,int ldb, ll strideB,float beta,   ptr C,int ldc, ll strideC,int batchCount) = 5331;
+        int rpc_cublasltmatrixlayoutsetattribute(ptr matLayout, int attr, mem_data data) = 5332;
     } = 1;
 } = 99;
